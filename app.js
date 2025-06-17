@@ -35,7 +35,8 @@ app.get('/health', (req, res) => {
     status: 'OK',
     message: 'Namal Alumni Network Backend is running',
     timestamp: new Date().toISOString(),
-    version: '1.0.0'
+    version: '1.0.0',
+    database: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected'
   });
 });
 
@@ -57,31 +58,90 @@ app.use('*', (req, res) => {
 // Error handling middleware
 app.use(errorHandler);
 
-// Connect to MongoDB
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/namal-alumni')
-  .then(() => {
-    console.log('Connected to MongoDB');
-    console.log('Database:', mongoose.connection.name);
-  })
-  .catch((err) => {
-    console.error('MongoDB connection error:', err);
-    process.exit(1);
-  });
+// MongoDB connection with proper error handling
+const connectDB = async () => {
+  try {
+    // Check if MONGODB_URI is provided
+    if (!process.env.MONGODB_URI) {
+      console.error('❌ MONGODB_URI environment variable is not set');
+      console.log('📝 Please set up your MongoDB connection:');
+      console.log('   1. Create a MongoDB Atlas account at https://www.mongodb.com/atlas');
+      console.log('   2. Create a new cluster');
+      console.log('   3. Get your connection string');
+      console.log('   4. Add MONGODB_URI=your_connection_string to your .env file');
+      console.log('');
+      console.log('⚠️  Server will start without database connection');
+      return;
+    }
+
+    // Configure mongoose options
+    const options = {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+      serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s
+      socketTimeoutMS: 45000, // Close sockets after 45s of inactivity
+      maxPoolSize: 10, // Maintain up to 10 socket connections
+      serverSelectionRetryDelayMS: 2000, // Retry every 2 seconds
+    };
+
+    await mongoose.connect(process.env.MONGODB_URI, options);
+    console.log('✅ Connected to MongoDB');
+    console.log('📊 Database:', mongoose.connection.name);
+  } catch (err) {
+    console.error('❌ MongoDB connection error:', err.message);
+    console.log('');
+    console.log('🔧 Troubleshooting steps:');
+    console.log('   1. Check if your MongoDB URI is correct');
+    console.log('   2. Ensure your IP address is whitelisted in MongoDB Atlas');
+    console.log('   3. Verify your database credentials');
+    console.log('   4. Check your internet connection');
+    console.log('');
+    console.log('⚠️  Server will continue running without database connection');
+  }
+};
+
+// Connect to database
+connectDB();
+
+// Handle MongoDB connection events
+mongoose.connection.on('connected', () => {
+  console.log('🔗 Mongoose connected to MongoDB');
+});
+
+mongoose.connection.on('error', (err) => {
+  console.error('❌ Mongoose connection error:', err.message);
+});
+
+mongoose.connection.on('disconnected', () => {
+  console.log('🔌 Mongoose disconnected from MongoDB');
+});
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
-  console.log('SIGTERM received. Shutting down gracefully...');
+  console.log('🛑 SIGTERM received. Shutting down gracefully...');
   mongoose.connection.close(() => {
-    console.log('MongoDB connection closed.');
+    console.log('🔌 MongoDB connection closed.');
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', () => {
+  console.log('🛑 SIGINT received. Shutting down gracefully...');
+  mongoose.connection.close(() => {
+    console.log('🔌 MongoDB connection closed.');
     process.exit(0);
   });
 });
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`Client URL: ${process.env.CLIENT_URL || 'http://localhost:5173'}`);
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🔗 Client URL: ${process.env.CLIENT_URL || 'http://localhost:5173'}`);
+  console.log('');
+  if (!process.env.MONGODB_URI) {
+    console.log('⚠️  No database connection - please configure MONGODB_URI');
+  }
 });
 
 module.exports = app;
